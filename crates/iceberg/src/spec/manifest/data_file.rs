@@ -455,6 +455,8 @@ pub enum DataFileFormat {
     Parquet,
     /// Puffin file format: <https://iceberg.apache.org/puffin-spec/>
     Puffin,
+    /// Vortex-RDF file format: <https://github.com/vortex-rdf/vortex-rdf>
+    Vortex,
 }
 
 impl FromStr for DataFileFormat {
@@ -466,6 +468,7 @@ impl FromStr for DataFileFormat {
             "orc" => Ok(Self::Orc),
             "parquet" => Ok(Self::Parquet),
             "puffin" => Ok(Self::Puffin),
+            "vortex" => Ok(Self::Vortex),
             _ => Err(invalid_data!("Unsupported data file format: {s}")),
         }
     }
@@ -478,6 +481,7 @@ impl std::fmt::Display for DataFileFormat {
             DataFileFormat::Orc => write!(f, "orc"),
             DataFileFormat::Parquet => write!(f, "parquet"),
             DataFileFormat::Puffin => write!(f, "puffin"),
+            DataFileFormat::Vortex => write!(f, "vortex"),
         }
     }
 }
