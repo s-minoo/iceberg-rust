@@ -31,6 +31,7 @@ repository = { workspace = true }
 
 [features]
 default = []
+vortex = ["dep:vortex-rdf-core"]
 
 [dependencies]
 aes-gcm = { workspace = true }
@@ -91,6 +92,7 @@ url = { workspace = true }
 uuid = { workspace = true }
 zeroize = { workspace = true }
 zstd = { workspace = true }
+vortex-rdf-core = { path = "../../../vortex-rdf/core", optional = true, features = ["arrow"] }
 
 [dev-dependencies]
 expect-test = { workspace = true }
