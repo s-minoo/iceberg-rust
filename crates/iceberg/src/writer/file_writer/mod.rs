@@ -33,6 +33,11 @@ pub mod location_generator;
 /// Module providing writers that can automatically roll over to new files based on size thresholds.
 pub mod rolling_writer;
 
+#[cfg(feature = "vortex")]
+mod vortex_writer;
+#[cfg(feature = "vortex")]
+pub use vortex_writer::{VortexWriter, VortexWriterBuilder};
+
 type DefaultOutput = Vec<DataFileBuilder>;
 
 /// File writer builder trait.
