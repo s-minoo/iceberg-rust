@@ -32,7 +32,8 @@ use vortex_rdf_core::{ArrowBuilder, Indexes, LayoutStrategy, VortexRdfError, Vor
 use super::{FileWriter, FileWriterBuilder};
 use crate::io::OutputFile;
 use crate::spec::{
-    DataContentType, DataFileBuilder, DataFileFormat, Datum, Schema, SchemaRef, Struct,
+    DataContentType, DataFileBuilder, DataFileFormat, Datum, NestedField, PrimitiveType, Schema,
+    SchemaRef, Struct, Type,
 };
 use crate::writer::CurrentFileStatus;
 use crate::{Error, ErrorKind, Result};
@@ -62,7 +63,6 @@ impl FileWriterBuilder for VortexWriterBuilder {
 
     async fn build(&self, output_file: OutputFile) -> Result<Self::R> {
         Ok(VortexWriter {
-            schema: self.schema.clone(),
             indexes: self.indexes.clone(),
             output_file,
             batches: Vec::new(),
@@ -78,12 +78,28 @@ impl FileWriterBuilder for VortexWriterBuilder {
 /// encoded), so batches are buffered and the file is written on [`close`](FileWriter::close).
 #[derive(Debug)]
 pub struct VortexWriter {
-    schema: SchemaRef,
     indexes: Indexes,
     output_file: OutputFile,
     batches: Vec<RecordBatch>,
     current_row_num: usize,
     buffered_bytes: usize,
+}
+
+impl VortexWriter {
+    /// Vortex files' logical schema consists of 4 columns s, p, o, g
+    /// with each column typed to be a [Primitive String](PrimitiveType::String)
+    /// without null values
+    pub fn schema() -> SchemaRef {
+        let fields = QUAD_COLUMNS
+            .iter()
+            .enumerate()
+            .map(|(i, name)| {
+                NestedField::required(i as i32 + 1, name, Type::Primitive(PrimitiveType::String))
+                    .into()
+            })
+            .collect::<Vec<_>>();
+        Arc::new(Schema::builder().with_fields(fields).build().unwrap())
+    }
 }
 
 impl FileWriter for VortexWriter {
@@ -102,7 +118,8 @@ impl FileWriter for VortexWriter {
             return Ok(vec![]);
         }
 
-        let arrow_schema: ArrowSchemaRef = Arc::new(self.schema.as_ref().try_into()?);
+        let schema = VortexWriter::schema();
+        let arrow_schema: ArrowSchemaRef = Arc::new(schema.as_ref().try_into()?);
         let reader: Box<dyn RecordBatchReader + Send> = Box::new(RecordBatchIterator::new(
             self.batches.into_iter().map(Ok),
             arrow_schema,
@@ -113,14 +130,12 @@ impl FileWriter for VortexWriter {
             .map_err(vortex_err)?;
         let store = VortexRdfStore::from_built(built).map_err(vortex_err)?;
         let record_count = store.size().await.map_err(vortex_err)? as u64;
-        let (lower_bounds, upper_bounds) = term_bounds(&self.schema, &store).await?;
+        let (lower_bounds, upper_bounds) = term_bounds(schema, &store).await?;
         let bytes = store.to_bytes().await.map_err(vortex_err)?;
         let file_size = bytes.len();
 
         self.output_file.write(Bytes::from(bytes)).await?;
 
-        // Every term column is required, so each holds a value in every row.
-        // Column sizes are left out: the four columns share one term dictionary.
         let field_ids = lower_bounds.keys().copied();
         let mut builder = DataFileBuilder::default();
         builder
@@ -143,7 +158,7 @@ impl FileWriter for VortexWriter {
 /// Term codes are ranks in the store's dictionary, which is sorted by the terms' bytes (the order Iceberg
 /// compares strings in), so each column's smallest and largest code decode to its bounds.
 async fn term_bounds(
-    schema: &Schema,
+    schema: SchemaRef,
     store: &VortexRdfStore,
 ) -> Result<(HashMap<i32, Datum>, HashMap<i32, Datum>)> {
     let unexpected = |msg: &str| Error::new(ErrorKind::Unexpected, msg.to_string());
@@ -171,14 +186,18 @@ async fn term_bounds(
                 )
             })?
             .id;
-        let mut terms = dict
+
+        let terms_res: Result<Vec<String>> = dict
             .decode_many(&[min, max])
             .await
             .map_err(vortex_err)?
             .into_iter()
-            .map(|term| term.ok_or_else(|| unexpected("Vortex-RDF term code is out of range.")));
-        lower.insert(field_id, Datum::string(terms.next().unwrap()?));
-        upper.insert(field_id, Datum::string(terms.next().unwrap()?));
+            .map(|term| term.ok_or_else(|| unexpected("Vortex-RDF term code is out of range.")))
+            .collect();
+        let mut terms = terms_res?.into_iter();
+
+        lower.insert(field_id, Datum::string(terms.next().unwrap()));
+        upper.insert(field_id, Datum::string(terms.next().unwrap()));
     }
     Ok((lower, upper))
 }
@@ -329,5 +348,4 @@ mod tests {
         assert!(writer.close().await.unwrap().is_empty());
         assert!(!file_io.exists("memory:///data/quads.vortex").await.unwrap());
     }
-
 }
