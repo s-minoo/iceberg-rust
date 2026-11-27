@@ -99,7 +99,7 @@ async fn table_with_vortex_file(warehouse: &str) -> Table {
 
     let schema = table.metadata().current_schema().clone();
     let rolling = RollingFileWriterBuilder::new_with_default_file_size(
-        VortexWriterBuilder::new(schema.clone(), vec![]),
+        VortexWriterBuilder::new(vec![]),
         table.file_io().clone(),
         DefaultLocationGenerator::new(table.metadata()).unwrap(),
         DefaultFileNameGenerator::new("data".to_string(), None, DataFileFormat::Vortex),

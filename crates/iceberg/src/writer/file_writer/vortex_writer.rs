@@ -47,14 +47,13 @@ const QUAD_COLUMNS: [&str; 4] = ["s", "p", "o", "g"];
 /// Builds a [`VortexWriter`] per output file.
 #[derive(Debug, Clone)]
 pub struct VortexWriterBuilder {
-    schema: SchemaRef,
     indexes: Indexes,
 }
 
 impl VortexWriterBuilder {
     /// A builder for files of `schema`'s quads, with the vortex-rdf `indexes` built into each.
-    pub fn new(schema: SchemaRef, indexes: Indexes) -> Self {
-        Self { schema, indexes }
+    pub fn new(indexes: Indexes) -> Self {
+        Self { indexes }
     }
 }
 
@@ -86,7 +85,7 @@ pub struct VortexWriter {
 }
 
 impl VortexWriter {
-    /// Vortex files' logical schema consists of 4 columns s, p, o, g
+    /// Vortex-rdf files' logical schema consists of 4 columns s, p, o, g
     /// with each column typed to be a [Primitive String](PrimitiveType::String)
     /// without null values
     pub fn schema() -> SchemaRef {
@@ -253,9 +252,9 @@ mod tests {
         RecordBatch::try_new(Arc::new(arrow_schema), columns).unwrap()
     }
 
-    async fn writer(file_io: &FileIO, schema: &SchemaRef) -> VortexWriter {
+    async fn writer(file_io: &FileIO) -> VortexWriter {
         let output = file_io.new_output("memory:///data/quads.vortex").unwrap();
-        VortexWriterBuilder::new(schema.clone(), vec![])
+        VortexWriterBuilder::new(vec![])
             .build(output)
             .await
             .unwrap()
@@ -278,7 +277,7 @@ mod tests {
             Some("<http://ex.org/g>"),
         ];
 
-        let mut writer = writer(&file_io, &schema).await;
+        let mut writer = writer(&file_io).await;
         writer.write(&batch(&schema, &[alice, bob])).await.unwrap();
         writer.write(&batch(&schema, &[alice])).await.unwrap();
         assert_eq!(writer.current_row_num(), 3);
@@ -344,7 +343,7 @@ mod tests {
     #[tokio::test]
     async fn test_vortex_writer_empty_writes_no_file() {
         let file_io = FileIO::new_with_memory();
-        let writer = writer(&file_io, &quad_schema()).await;
+        let writer = writer(&file_io).await;
         assert!(writer.close().await.unwrap().is_empty());
         assert!(!file_io.exists("memory:///data/quads.vortex").await.unwrap());
     }
